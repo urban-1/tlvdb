@@ -162,6 +162,10 @@ class HashIndex(Index):
         self.header.items += 1
         self.nextid += 1
 
+    def update(self, part, tid, pos):
+        self.clean = False
+        # Start indexing from 1: 0 is empty!
+        self.partitions[part]["index"][tid] = pos + 1
 
     def get(self, tlvid):
         for part, p in enumerate(self.partitions):

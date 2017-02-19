@@ -23,9 +23,7 @@ class TestDB(unittest.TestCase):
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         cls.IFILE = "%s/data/test.idx" % ROOT
-        # ITEMS = 100*100
-        # cls.ITEMS = 100*10
-        cls.ITEMS = 10
+        cls.ITEMS = 1000*100
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestDB.ts.index
 
@@ -77,10 +75,8 @@ class TestDB(unittest.TestCase):
         TestDB.headerDump()
 
     def test_0004_vacuum(self):
-        print(TestDB.idx.getStrInfo())
         TestDB.ts.vacuum()
         TestDB.headerDump()
-        print(TestDB.idx.getStrInfo())
 
     def test_0005_read_all2(self):
         lg.debug("")
@@ -94,4 +90,90 @@ class TestDB(unittest.TestCase):
             lg.debug("testing %d: %s" % (i, t))
             val = ("value%d" % (i)).encode("ascii")
             key = ("key%d" % (i)).encode("ascii")
-            # self.assertEqual(t.value[TLV(key)], TLV(val))
+            self.assertEqual(t.value[TLV(key)], TLV(val))
+
+    def test_0006_update_fitting(self):
+        lg.debug("")
+
+        tid = TestDB.idx.nextid-1
+        t = TestDB.ts.read(tid)
+
+        oldkey = TLV(("key%d" % tid).encode("ascii"))
+        newvalue = TLV("-".encode("ascii"))
+
+        t.value[oldkey] = newvalue
+        TestDB.ts.update(t)
+
+        t = TestDB.ts.read(tid)
+        lg.debug("Updated TLV: %s", t)
+        self.assertEqual(t.value[oldkey], newvalue)
+
+
+    def test_0007_vacuum_confirm(self):
+        TestDB.ts.vacuum()
+
+        tid = TestDB.idx.nextid-1
+        t = TestDB.ts.read(tid)
+
+        oldkey = TLV(("key%d" % tid).encode("ascii"))
+        newvalue = TLV("-".encode("ascii"))
+
+        lg.debug("Updated TLV after Vacuum: %s", t)
+        self.assertEqual(t.value[oldkey], newvalue)
+
+    def test_0008_update_non_fitting(self):
+        lg.debug("")
+
+        tid = TestDB.idx.nextid-2
+        t = TestDB.ts.read(tid)
+
+        oldkey = TLV(("key%d" % tid).encode("ascii"))
+        newvalue = TLV("I am not fitting for sure!".encode("ascii"))
+
+        t.value[oldkey] = newvalue
+        TestDB.ts.update(t)
+
+        lg.debug("Updated TLV: %s", t)
+        self.assertEqual(t.value[oldkey], newvalue)
+
+
+    def test_0009_vacuum_confirm(self):
+        lg.debug("")
+        TestDB.ts.vacuum()
+
+        tid = TestDB.idx.nextid-2
+        t = TestDB.ts.read(tid)
+
+        oldkey = TLV(("key%d" % tid).encode("ascii"))
+        newvalue = TLV("I am not fitting for sure!".encode("ascii"))
+
+        lg.debug("Updated TLV after Vacuum: %s", t)
+        self.assertEqual(t.value[oldkey], newvalue)
+
+    def test_0010_restore_changed(self):
+        """
+        We need this to be able to run the tests without reset
+        """
+        lg.debug("")
+
+        tid1 = TestDB.idx.nextid-1
+        tid2 = TestDB.idx.nextid-2
+
+        oldkey1 = TLV(("key%d" % tid1).encode("ascii"))
+        newvalue1 = TLV(("key%d" % tid1).encode("ascii"))
+        t = TestDB.ts.read(tid1)
+        t.value[oldkey1] = newvalue1
+        TestDB.ts.update(t)
+
+        oldkey2 = TLV(("key%d" % tid2).encode("ascii"))
+        newvalue2 = TLV(("key%d" % tid2).encode("ascii"))
+        t = TestDB.ts.read(tid2)
+        t.value[oldkey2] = newvalue2
+        TestDB.ts.update(t)
+
+        TestDB.ts.vacuum()
+
+        t = TestDB.ts.read(tid1)
+        self.assertEqual(t.value[oldkey1], newvalue1)
+        t = TestDB.ts.read(tid2)
+        self.assertEqual(t.value[oldkey2], newvalue2)

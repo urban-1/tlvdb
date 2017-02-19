@@ -32,6 +32,16 @@ def main():
             lg.info('   - rm %s' % f)
             os.remove(f)
 
+    # Set level
+    if popts.verbosity == 3:
+        lg.getLogger().setLevel(level=lg.DEBUG)
+    elif popts.verbosity == 2:
+        lg.getLogger().setLevel(level=lg.INFO)
+    elif popts.verbosity == 1:
+        lg.getLogger().setLevel(level=lg.WARN)
+    elif popts.verbosity == 0:
+        lg.getLogger().setLevel(level=lg.ERROR)
+
     if not popts.tests:
         suite = unittest.TestLoader().discover(os.path.dirname(__file__)+'/tests')
 

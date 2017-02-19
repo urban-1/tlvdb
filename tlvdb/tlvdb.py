@@ -1,4 +1,5 @@
 import os
+import time
 import logging as lg
 
 import tlvdb.util as util
@@ -6,8 +7,8 @@ from tlvdb.tlv import TLV
 from tlvdb.tlvindex import HashIndex
 from tlvdb.tlverrors import *
 
-IO_BUFFER_LEN = 1000000 * 1
-# IO_BUFFER_LEN = 10
+# x MB buffer
+IO_BUFFER_LEN = 1000000
 
 
 class TlvStorage(object):
@@ -24,7 +25,6 @@ class TlvStorage(object):
         self.dirname = os.path.abspath(os.path.dirname(index_file))
         self.basename = self.basename[0:self.basename.index(".")]
         self.in_trance = False
-        self._writeBuffer = {"len": 0, "buf": bytes()}
 
         # open fds
         self.ifd = util.create_open(index_file)
@@ -40,19 +40,6 @@ class TlvStorage(object):
 
         self.clean = True
 
-    def _flushWriteBuffer(self):
-
-        if self._writeBuffer["len"] > 0:
-            lg.info("Flusing Storage write buffer")
-            part = self._writeBuffer["part"]
-            self.dfds[part]["fd"].seek(self._writeBuffer["pos"])
-            self.dfds[part]["fd"].write(self._writeBuffer["buf"])
-            self.dfds[part]["fd"].flush()
-            self.dfds[part]["last"] += self._writeBuffer["len"]
-            self._writeBuffer["pos"] += self._writeBuffer["len"]
-            self._writeBuffer["len"] = 0
-            self._writeBuffer["buf"] = b""
-
     def _getDataFileEnd(self, part):
         try:
             return self.dfds[part]["last"]
@@ -63,13 +50,18 @@ class TlvStorage(object):
         self.dfds[part]["last"] = self.dfds[part]["fd"].tell()
         return self.dfds[part]["last"]
 
+    def _findAGoodPossiotion(self, part, size):
+        return self._getDataFileEnd(part)
+
+
     def beginTransaction(self):
         self.in_trance = True
+        self._createCount = 0
 
     def endTransaction(self):
         self.in_trance = False
         self.index.flush()
-        self._flushWriteBuffer()
+        self._createCount = 0
 
         for p in self.dfds:
             p["fd"].flush()
@@ -78,6 +70,8 @@ class TlvStorage(object):
         """
         Create a new entry in the database from the given tlv
         """
+        self._createCount += 1
+
         # 1. Find next available ID
         nextid = self.index.nextid
 
@@ -85,28 +79,15 @@ class TlvStorage(object):
         part = 0
 
         # 3. Find next pos in data file (TODO: consult index)
-        pos = self._getDataFileEnd(part)
-
-        # 4. Write data
         data = packable.pack()
         datalen = len(data)
+        pos = self._findAGoodPossiotion(part, datalen)
 
+        # 4. Write data
         # If in transaction, use the buffer
-        if self.in_trance is True:
-            self._writeBuffer["pos"] = pos
-            # update position for the index
-            pos = self._writeBuffer["len"] + pos
-            self._writeBuffer["part"] = part
-            self._writeBuffer["buf"] += data
-            self._writeBuffer["len"] += datalen
-
-            if self._writeBuffer["len"] >= IO_BUFFER_LEN:
-                self._flushWriteBuffer()
-        else:
-
-            self.dfds[part]["fd"].seek(pos)
-            self.dfds[part]["fd"].write(data)
-            self.dfds[part]["last"] += datalen
+        self.dfds[part]["fd"].seek(pos)
+        self.dfds[part]["fd"].write(data)
+        self.dfds[part]["last"] += datalen
 
         # 5. Update index
         self.index.create(part, nextid, pos)
@@ -125,7 +106,10 @@ class TlvStorage(object):
             raise IndexNotFoundError("Could not find item with id=%d" % tid)
 
         self.dfds[part]["fd"].seek(pos)
-        return instance.unpack(self.dfds[part]["fd"])
+        instance.unpack(self.dfds[part]["fd"])
+        instance._tlvdb_id = tid
+        instance._tlvdb_clean = True
+        return instance
 
     def delete(self, tid, klass=None):
         """
@@ -149,6 +133,41 @@ class TlvStorage(object):
 
         return ret
 
+    def update(self, obj):
+        if not hasattr(obj, "_tlvdb_id"):
+            raise WrongInstanceError()
+
+        # Read original object
+        old = self.read(obj._tlvdb_id)
+
+        # get old index
+        part, oldpos = self.index.get(obj._tlvdb_id)
+
+        new_data = obj.pack()
+        old_data = old.pack()
+
+        datalen = len(new_data)
+
+        # See if we can fit it!
+        if datalen <= len(old_data):
+            lg.debug("Update: Object is fitting in its old place")
+            pos = oldpos
+        else:
+            lg.debug("Update: Object is NOT fitting")
+            pos = self._findAGoodPossiotion(part, datalen)
+
+        # No transaction support since we are not writing in a continues blocks
+        self.dfds[part]["fd"].seek(pos)
+        self.dfds[part]["fd"].write(new_data)
+        # If we append, remember the partitions last byte
+        if self.dfds[part]["last"] == pos:
+            self.dfds[part]["last"] += datalen
+
+        # Update the index
+        self.index.update(part, obj._tlvdb_id, pos)
+        self.index.flush()
+        self.dfds[part]["fd"].flush()
+
     def close(self):
         self.index.close()
         for fd in self.dfds:
@@ -159,7 +178,6 @@ class TlvStorage(object):
         Compact the free space in partitions:
 
         - Create a new temp partition
-        - Init our buffered writter
         - For every item in the main index
             - write it in the new partition
             - update the index
@@ -168,7 +186,7 @@ class TlvStorage(object):
         - Flush the index
         """
         if self.in_trance:
-            raise AlreadyInTrance("In the middle of transaction, vacuum was called!")
+            raise AlreadyInTranceError("In the middle of transaction, vacuum was called!")
         # Create swap
         swap_part = len(self.dfds)
         swap_path = "%s/%s.%d.dat" % (self.dirname, self.basename, swap_part)
@@ -176,12 +194,8 @@ class TlvStorage(object):
         self.dfds[swap_part]["last"] = 0
         self.dfds[swap_part]["fd"] = open(swap_path, "wb")
 
-        # Init buffered write
+        # Start at the beginning
         new_pos = 0
-        self._writeBuffer["pos"] = new_pos
-        self._writeBuffer["part"] = swap_part
-        self._writeBuffer["buf"] = b""
-        self._writeBuffer["len"] = 0
 
         # Iterate, read, write
         for part, cont in enumerate(self.index.partitions):
@@ -198,8 +212,7 @@ class TlvStorage(object):
                 data_len = tmptlv.read(pos-1)
                 lg.debug("Got data length=%d: %s" % (data_len, tmptlv))
 
-                self._writeBuffer["len"] += data_len
-                self._writeBuffer["buf"] += tmptlv.pack()
+                self.dfds[swap_part]["fd"].write(tmptlv.pack())
 
                 # In memory update of the index
                 lg.debug("Updating index with %d=>%d (with +1 offset)" % (tid, new_pos + 1))
@@ -207,11 +220,8 @@ class TlvStorage(object):
 
                 new_pos += data_len
 
-                if self._writeBuffer["len"] >= IO_BUFFER_LEN:
-                    self._flushWriteBuffer()
-
             # Flash whatever remainder
-            self._flushWriteBuffer()
+            self.dfds[part]["fd"].flush()
 
             # Clean up temp partition
             self.dfds[swap_part]["fd"].flush()
@@ -232,9 +242,6 @@ class TlvStorage(object):
                 self.index.flush()
                 # Reopen real partition
                 self.dfds[part]["fd"] = util.create_open(orig_part)
-
-
-
 
     def getHeader(self):
         return self.index.header
