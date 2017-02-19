@@ -3,6 +3,8 @@ import logging
 
 lg = logging.getLogger("tlv")
 
+from tlvdb.tlverrors import TlvSpecError
+
 
 H=2**16
 I=2**32
@@ -249,7 +251,14 @@ class TLV(BaseIO, IPackable):
             spec = "<%s" % self.type.decode("ascii")
             lg.info("        spec=%s" % (spec))
 
-            self.length = struct.calcsize(spec)
+            # This validates the spec, so control it!
+            try:
+                self.length = struct.calcsize(spec)
+            except struct.error as e:
+                raise TlvSpecError(
+                    "While reading type=%s and spec=%s" % (self.type, spec),
+                    str(e)
+                )
             lg.debug("        length=%d" % (self.length))
             data = self.fd.read(self.length)
             data_len += self.length

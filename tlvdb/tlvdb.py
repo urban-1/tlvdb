@@ -1,11 +1,10 @@
 import os
-
-from tlvdb.tlv import *
-from tlvdb.tlvindex import *
-from tlvdb.tlverrors import *
-import tlvdb.util as util
-
 import logging as lg
+
+import tlvdb.util as util
+from tlvdb.tlv import TLV
+from tlvdb.tlvindex import HashIndex
+from tlvdb.tlverrors import *
 
 IO_BUFFER_LEN = 1000000 * 1
 # IO_BUFFER_LEN = 1000 * 1
@@ -122,6 +121,9 @@ class TlvStorage(object):
         """
         instance = klass()
         part, pos = self.index.get(tid)
+        if part is False:
+            raise IndexNotFoundError("Could not find item with id=%d" % tid)
+
         self.dfds[part]["fd"].seek(pos)
         return instance.unpack(self.dfds[part]["fd"])
 
@@ -150,7 +152,7 @@ class TlvStorage(object):
     def close(self):
         self.index.close()
         for fd in self.dfds:
-            fd.close()
+            fd["fd"].close()
 
     def vacuum(self):
         """

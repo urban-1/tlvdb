@@ -5,6 +5,7 @@ import logging as lg
 
 import tlvdb.util as util
 from tlvdb.tlv import TLV
+from tlvdb.tlvindex import HashIndex
 
 
 class TestTLV(unittest.TestCase):

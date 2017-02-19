@@ -1,7 +1,7 @@
 import struct
 import logging as lg
 
-from tlvdb.tlv import *
+from tlvdb.tlv import TLV, BaseIO
 
 class IndexEntry(BaseIO):
     """
@@ -199,7 +199,7 @@ class HashIndex(Index):
         # parse it
         for i in range(0, self.header.items):
             datapos = i*IndexEntry.LENGTH
-            lg.debug("Reading index entry from=%d to to=%d" % (datapos, datapos+IndexEntry.LENGTH))
+            # lg.debug("Reading index entry from=%d to to=%d" % (datapos, datapos+IndexEntry.LENGTH))
             part, tid, npos = struct.unpack("<BQQ", data[datapos:datapos+IndexEntry.LENGTH])
 
             self.partitions[part]["index"][tid] = npos
@@ -219,3 +219,12 @@ class HashIndex(Index):
                 # lg.debug("Dumping index entry port=%d pos=%d" % (part, pos))
                 data = struct.pack("<BQQ", part, tid, pos)
                 self.fd.write(data)
+
+    def getStrInfo(self):
+        """
+        Debuging info
+        """
+        s = ""
+        for part, cont in enumerate(self.partitions):
+            s = "%sPartition: %d, Size: %d\n" % (s, part, len(cont["index"]))
+        return s
