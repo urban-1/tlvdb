@@ -9,6 +9,9 @@ import unittest
 
 logging.basicConfig(level=logging.DEBUG)
 
+from tests import *
+from tlvdb import *
+
 
 lg = logging
 

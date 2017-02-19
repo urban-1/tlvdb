@@ -1,1 +1,1 @@
-all = ["test_tlv", "test_tlvdb"]
+__all__ = ["test_tlv", "test_tlvdb"]

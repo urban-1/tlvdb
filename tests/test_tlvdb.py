@@ -4,7 +4,7 @@ import unittest
 import logging
 
 from tlvdb.tlv import TLV
-from tlvdb.tlvdb import TlvStorage
+from tlvdb.tlvstorage import TlvStorage
 from tlvdb.tlverrors import *
 
 lg = logging.getLogger("tests")

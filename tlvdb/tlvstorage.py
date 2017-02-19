@@ -2,7 +2,7 @@ import os
 import time
 import logging as lg
 
-import tlvdb.util as util
+from tlvdb import util
 from tlvdb.tlv import TLV
 from tlvdb.tlvindex import HashIndex
 from tlvdb.tlverrors import *
