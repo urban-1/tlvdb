@@ -42,7 +42,9 @@ class IndexEntry(BaseIO):
 
 
 class IndexHeader(BaseIO):
-
+    """
+    Generic file header included in the index
+    """
     LENGTH = 256
     USED = 11
 
@@ -88,6 +90,15 @@ class IndexHeader(BaseIO):
     def size(self):
         return IndexHeader.LENGTH
 
+    def getStrInfo(self):
+        s = (
+            "Header Version: %s\n"
+            "    Index Type: %s\n"
+            "   Num Entries: %s\n"
+            "    Partitions: %s\n"
+        ) % (self.version, self.type, self.items, self.partitions)
+        return s
+
 
 class Index(object):
 
@@ -129,7 +140,7 @@ class Index(object):
         pass
 
     def flush(self):
-        print("Flushing Index")
+        lg.info("Flushing Index")
         self.header.write()
         self._dumpIndex()
         self.fd.flush()
@@ -138,8 +149,28 @@ class Index(object):
     def close(self):
         self.fd.close()
 
-
 class HashIndex(Index):
+    """
+    The HashIndex is used for object ID indexing in the filesystem. Limits and
+    sizes:
+
+    - The filesystem might contain up to 254 partitions
+    - Each partition can have maximum 2**64 -1 number of Items
+    - Each partition can have maximum 2**64 -1 number of Bytes
+    - Each index can have maximum 2**64 -1 number of Items
+
+    Therefore the index format is BQQ.
+
+    There is however a special partition! That is partition 255 which contains
+    the empty spaces in all other partitions. Its format is BB7BQ:
+
+    - B: 255
+    - B: partition number
+    - 7B: size available
+    - Q: position
+
+    NOTE: Partition 0 is the only one tested!
+    """
 
     def __init__(self, *args):
         self.partitions = []
@@ -159,6 +190,7 @@ class HashIndex(Index):
         self.clean = False
         # Start indexing from 1: 0 is empty!
         self.partitions[part]["index"][tid] = pos + 1
+        self.partitions[part]["items"] += 1
         self.header.items += 1
         self.nextid += 1
 
@@ -180,16 +212,21 @@ class HashIndex(Index):
         """
         for part, p in enumerate(self.partitions):
             if tlvid in p["index"]:
-                # Check if already deleted...
+                # DEPRECATED: Check if already deleted...
+                # This is a reserved position in the index
                 if p["index"][tlvid] == 0:
                     return False, None
                 oldpos = p["index"][tlvid] - 1
                 del p["index"][tlvid]
                 self.header.items -= 1
+                p["items"] -= 1
                 self.clean = False
                 return part, oldpos
 
         return False, None
+
+    def setEmpty(self, part, oldpos, del_size):
+        self.partitions[part]["empty"][oldpos] = del_size
 
     def _initHeader(self):
         self.header.version = 1
@@ -206,15 +243,21 @@ class HashIndex(Index):
         data = self.fd.read()
 
         for i in range(0, self.header.partitions):
-            self.partitions.append({"index":{}, "empty":0})
+            self.partitions.append({"index":{}, "empty": {}, "items": 0})
 
         # parse it
         for i in range(0, self.header.items):
             datapos = i*IndexEntry.LENGTH
             # lg.debug("Reading index entry from=%d to to=%d" % (datapos, datapos+IndexEntry.LENGTH))
-            part, tid, npos = struct.unpack("<BQQ", data[datapos:datapos+IndexEntry.LENGTH])
+            part, tid, npos = struct.unpack("<BQQ", data[datapos:datapos + IndexEntry.LENGTH])
+
+            if part == 255:
+                # TODO
+                lg.info("Found info!")
+                continue
 
             self.partitions[part]["index"][tid] = npos
+            self.partitions[part]["items"] += 1
 
             # if npos == 0:
             #     self.header.empty += 1
@@ -232,11 +275,24 @@ class HashIndex(Index):
                 data = struct.pack("<BQQ", part, tid, pos)
                 self.fd.write(data)
 
+            for pos, size in cont["empty"].items():
+                combo = part
+                combo <<= 7*8
+                combo |= size
+                data = struct.pack("<BQQ", 255, combo, pos)
+                self.fd.write(data)
+
+
     def getStrInfo(self):
         """
         Debuging info
         """
         s = ""
         for part, cont in enumerate(self.partitions):
-            s = "%sPartition: %d, Size: %d\n" % (s, part, len(cont["index"]))
+            s = (
+                "%s"
+                "   - Partition: %d\n"
+                "         Items: %d\n"
+                "          Free: %d\n"
+            ) % (s, part, cont["items"], len(cont["empty"]))
         return s

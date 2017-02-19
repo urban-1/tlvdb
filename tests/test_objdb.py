@@ -22,7 +22,7 @@ class TestODB(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-        cls.IFILE = "%s/data/test.idx" % ROOT
+        cls.IFILE = "%s/data/test_obj.idx" % ROOT
         cls.ITEMS = 1000*100
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestODB.ts.index

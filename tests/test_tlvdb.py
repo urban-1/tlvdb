@@ -13,17 +13,14 @@ class TestDB(unittest.TestCase):
 
     @classmethod
     def headerDump(cls):
-        print("%15s: %s" % ("Header Version", cls.idx.header.version))
-        print("%15s: %s" % ("Index Type", cls.idx.header.type))
-        print("%15s: %s" % ("Num Entries", cls.idx.header.items))
-        # print("%15s: %s" % ("Num Empty", idx.header.empty))
-        print("%15s: %s" % ("Partitions", cls.idx.header.partitions))
+        print(cls.idx.header.getStrInfo())
+        print(cls.idx.getStrInfo())
 
     @classmethod
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         cls.IFILE = "%s/data/test.idx" % ROOT
-        cls.ITEMS = 1000*100
+        cls.ITEMS = 10
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestDB.ts.index
 
@@ -90,7 +87,9 @@ class TestDB(unittest.TestCase):
             lg.debug("testing %d: %s" % (i, t))
             val = ("value%d" % (i)).encode("ascii")
             key = ("key%d" % (i)).encode("ascii")
-            self.assertEqual(t.value[TLV(key)], TLV(val))
+            
+            self.assertEqual(t.value[TLV(key)], TLV(val),
+                msg="%s != %s" % (t.value[TLV(key)], TLV(val)))
 
     def test_0006_update_fitting(self):
         lg.debug("")
@@ -158,15 +157,16 @@ class TestDB(unittest.TestCase):
 
         tid1 = TestDB.idx.nextid-1
         tid2 = TestDB.idx.nextid-2
+        lg.info("Putting back %d and %d" % (tid1, tid2))
 
         oldkey1 = TLV(("key%d" % tid1).encode("ascii"))
-        newvalue1 = TLV(("key%d" % tid1).encode("ascii"))
+        newvalue1 = TLV(("value%d" % tid1).encode("ascii"))
         t = TestDB.ts.read(tid1)
         t.value[oldkey1] = newvalue1
         TestDB.ts.update(t)
 
         oldkey2 = TLV(("key%d" % tid2).encode("ascii"))
-        newvalue2 = TLV(("key%d" % tid2).encode("ascii"))
+        newvalue2 = TLV(("value%d" % tid2).encode("ascii"))
         t = TestDB.ts.read(tid2)
         t.value[oldkey2] = newvalue2
         TestDB.ts.update(t)

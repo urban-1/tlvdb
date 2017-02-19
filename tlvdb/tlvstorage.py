@@ -16,10 +16,12 @@ class TlvStorage(object):
     VERSION = 1
     """Storage version"""
 
-    def __init__(self, index_file, vacuum_thres=1, always_append=True):
+    def __init__(self, index_file, backfill=False):
         """
         :param str index_file: Path to the main index file
         """
+        self.backfill = backfill
+
         # Sort out files
         self.basename = os.path.basename(index_file)
         self.dirname = os.path.abspath(os.path.dirname(index_file))
@@ -126,6 +128,11 @@ class TlvStorage(object):
             self.dfds[part]["fd"].seek(oldpos)
             ret = instance.unpack(self.dfds[part]["fd"])
 
+        if self.backfill is True:
+            tmp_instance = TLV(fd=self.dfds[part]["fd"])
+            del_size = tmp_instance.size(oldpos)
+            self.index.setEmpty(part, oldpos, del_size)
+
         # In any case, flush index
         if self.in_trance is False:
             self.index.flush()
@@ -155,12 +162,14 @@ class TlvStorage(object):
             lg.debug("Update: Object is NOT fitting")
             pos = self._findAGoodPossiotion(part, datalen)
 
+            # If we append, remember the partitions last byte
+            if self.dfds[part]["last"] == pos:
+                self.dfds[part]["last"] += datalen
+                
+
         # No transaction support since we are not writing in a continues blocks
         self.dfds[part]["fd"].seek(pos)
         self.dfds[part]["fd"].write(new_data)
-        # If we append, remember the partitions last byte
-        if self.dfds[part]["last"] == pos:
-            self.dfds[part]["last"] += datalen
 
         # Update the index
         self.index.update(part, obj._tlvdb_id, pos)

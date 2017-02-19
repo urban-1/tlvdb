@@ -72,7 +72,10 @@ class IPackable(object):
 
 
     def pack(self, tab=""):
-        return self.toTLV().pack()
+        t = self.toTLV()
+        data = t.pack()
+        self._tlvdb_size = t._tlvdb_size
+        return data
 
     def unpack(self, fd):
         """
@@ -96,8 +99,8 @@ class IPackable(object):
             lg.debug("Unpacking %s" % attr)
             setattr(self, attr, decoded[attr_bytes])
 
+        self._tlvdb_size = t._tlvdb_size
         return self
-        raise NotImplementedError("You need to implement 'unpack()' ...")
 
     def __str__(self):
         """Basic representation of packable attributes"""
@@ -263,11 +266,12 @@ class TLV(BaseIO, IPackable):
 
     def unpack(self, fd):
         """
-        Unpack from the given file descriptor and return self
+        Unpack from the given file descriptor and return self. THIS FUNCTION
+        WILL NOT SEEK IN THE STREAM
         """
         self.fd = fd
         # Do not seek... just start reading
-        self.read(self.fd.tell(), False)
+        self._tlvdb_size = self.read(self.fd.tell(), False)
         return self
 
     def read(self, pos, seek=True):
@@ -374,6 +378,7 @@ class TLV(BaseIO, IPackable):
             lg.debug("%sPacking Generic value as <c%s" % (tab, self.type.decode("ascii")))
             data = struct.pack("<c%s" % self.type.decode("ascii"), self.type, self.value)
 
+        self._tlvdb_size = len(data)
         return data
 
     def write(self, pos, seek=True):
