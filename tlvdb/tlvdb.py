@@ -7,7 +7,7 @@ from tlvdb.tlvindex import HashIndex
 from tlvdb.tlverrors import *
 
 IO_BUFFER_LEN = 1000000 * 1
-# IO_BUFFER_LEN = 1000 * 1
+# IO_BUFFER_LEN = 10
 
 
 class TlvStorage(object):
@@ -191,15 +191,21 @@ class TlvStorage(object):
                 if pos == 0:
                     lg.warning("Skipping empty/deleted index?")
                     continue
+
                 tmptlv = TLV(fd=self.dfds[part]["fd"])
                 # REMEMBER: pos==0 means empty!
+                lg.debug("Reading from pos=%d" % (pos-1))
                 data_len = tmptlv.read(pos-1)
-                new_pos += data_len
+                lg.debug("Got data length=%d: %s" % (data_len, tmptlv))
+
                 self._writeBuffer["len"] += data_len
                 self._writeBuffer["buf"] += tmptlv.pack()
 
                 # In memory update of the index
-                # cont["index"][tid] = new_pos
+                lg.debug("Updating index with %d=>%d (with +1 offset)" % (tid, new_pos + 1))
+                cont["index"][tid] = new_pos + 1
+
+                new_pos += data_len
 
                 if self._writeBuffer["len"] >= IO_BUFFER_LEN:
                     self._flushWriteBuffer()
@@ -212,10 +218,21 @@ class TlvStorage(object):
             self.dfds[swap_part]["fd"].close()
             del self.dfds[swap_part]
 
+            # Clean up real partition
+            self.dfds[part]["fd"].close()
+
             # DANGEROUS PART: SHOULD NOT BE INTERUPTED
             orig_part = "%s/%s.%d.dat" % (self.dirname, self.basename, part)
-            os.rename(swap_path, orig_part)
-            self.index.flush()
+            try:
+                os.rename(swap_path, orig_part)
+            except:
+                lg.critical("Failed to move packed parition...")
+                self.index.reload()
+            else:
+                self.index.flush()
+                # Reopen real partition
+                self.dfds[part]["fd"] = util.create_open(orig_part)
+
 
 
 

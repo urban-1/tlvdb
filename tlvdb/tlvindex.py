@@ -146,6 +146,15 @@ class HashIndex(Index):
         self.nextid = 1
         super(HashIndex, self).__init__(*args)
 
+    def reload(self):
+        """
+        Clean all internal variables and call load()
+        """
+        self.partitions = []
+        self.nextid = 1
+        self.load()
+
+
     def create(self, part, tid, pos):
         self.clean = False
         # Start indexing from 1: 0 is empty!
@@ -191,7 +200,6 @@ class HashIndex(Index):
 
         # read the whole thing
         data = self.fd.read()
-
 
         for i in range(0, self.header.partitions):
             self.partitions.append({"index":{}, "empty":0})
