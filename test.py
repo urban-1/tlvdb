@@ -24,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description='Test arguments')
     parser.add_argument('-t', '--tests', metavar='N', type=str, nargs='*', help='tests to run')
     parser.add_argument('-v', '--verbosity', metavar='N', type=int, default=3, help='unittest versobsity level')
+    parser.add_argument('-d', '--debug-tlv', default=False, action='store_true', help='TLV versobsity level')
     parser.add_argument('-r', '--reset', default=False, action='store_true', help='Cleanup all test data')
     popts = parser.parse_args()
 
@@ -44,6 +45,9 @@ def main():
         lg.getLogger().setLevel(level=lg.WARN)
     elif popts.verbosity == 0:
         lg.getLogger().setLevel(level=lg.ERROR)
+
+    if popts.debug_tlv:
+        lg.getLogger("tlv").setLevel(lg.DEBUG)
 
     if not popts.tests:
         suite = unittest.TestLoader().discover(os.path.dirname(__file__)+'/tests')

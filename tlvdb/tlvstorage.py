@@ -56,12 +56,10 @@ class TlvStorage(object):
 
     def beginTransaction(self):
         self.in_trance = True
-        self._createCount = 0
 
     def endTransaction(self):
         self.in_trance = False
         self.index.flush()
-        self._createCount = 0
 
         for p in self.dfds:
             p["fd"].flush()
@@ -70,7 +68,6 @@ class TlvStorage(object):
         """
         Create a new entry in the database from the given tlv
         """
-        self._createCount += 1
 
         # 1. Find next available ID
         nextid = self.index.nextid
@@ -94,6 +91,8 @@ class TlvStorage(object):
         if self.in_trance is False:
             self.index.flush()
             self.dfds[part]["fd"].flush()
+
+        return nextid
 
     def read(self, tid, klass=TLV, criteria=None):
         """

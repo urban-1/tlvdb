@@ -42,14 +42,70 @@ class IPackable(object):
     packaged = []
     """Packaged attributes"""
 
+    @classmethod
+    def valueToTLV(self, value):
+        if isinstance(value, IPackable):
+            return value.toTLV()
+        elif type(value) == list:
+            t = []
+            for i in value:
+                t.append(IPackable.valueToTLV(i))
+            return TLV(t)
+        elif type(value) == dict:
+            d = {}
+            for k, v in value.items():
+                t[IPackable.valueToTLV(k)] = t[IPackable.valueToTLV(v)]
+            return TLV(d)
+        else:
+            return TLV(value)
+
+    def toTLV(self):
+        t = {}
+        for attr in self.__class__.packaged:
+            if not hasattr(self, attr):
+                continue
+
+            value = getattr(self, attr)
+            t[TLV(attr)] = IPackable.valueToTLV(value)
+
+        return TLV(t)
+
+
     def pack(self, tab=""):
-        raise NotImplementedError("You need to implement 'pack()' ...")
+        return self.toTLV().pack()
 
     def unpack(self, fd):
         """
         Unpack from the given file descriptor and return self
         """
+        t = TLV()
+        t.unpack(fd)
+        decoded = t.getDecodedValue()
+        print(decoded)
+        for attr in self.__class__.packaged:
+            # Convert to bytes if needed
+            attr_bytes = attr
+            try:
+                attr_bytes = attr.encode("ascii")
+            except:
+                pass
+            if attr_bytes not in decoded:
+                lg.warning("Could not find attr=%s" % attr)
+                continue
+
+            lg.debug("Unpacking %s" % attr)
+            setattr(self, attr, decoded[attr_bytes])
+
+        return self
         raise NotImplementedError("You need to implement 'unpack()' ...")
+
+    def __str__(self):
+        """Basic representation of packable attributes"""
+        s = "%s\n" % self.__class__.__name__
+        for attr in self.__class__.packaged:
+            s = "%s   - %s: %s\n" % (s, attr, getattr(self, attr))
+
+        return s
 
 class TLV(BaseIO, IPackable):
 
@@ -63,6 +119,22 @@ class TLV(BaseIO, IPackable):
         self.value = value
         if self.value is not None:
             self._autoSetup()
+
+    def getDecodedValue(self):
+        """Get the TLV value decoded to python objects"""
+        if type(self.value) == dict:
+            r = {}
+            for k, v in self.value.items():
+                r[k.getDecodedValue()] = v.getDecodedValue()
+            return r
+        elif type(self.value) == list:
+            # list of TLVs
+            r = []
+            for i in self.value:
+                r.append(i.getDecodedValue())
+            return r
+
+        return self.value
 
     def __hash__(self):
         return hash((self.type, self.value, self.length))
@@ -109,6 +181,14 @@ class TLV(BaseIO, IPackable):
             self.type = b"d"
         elif t == str or t == bytes:
             self.type = b"s"
+
+            # Assume all string are ascii... if you dont like it give me bytes...
+            try:
+                if type(self.value) == str:
+                    self.value = self.value.encode("ascii")
+            except:
+                pass
+
             self.length = len(self.value)
         else:
             raise RuntimeError("Unsupported type for value '%s'" % str(self.value))
@@ -280,9 +360,16 @@ class TLV(BaseIO, IPackable):
             for k, v in self.value.items():
                 data += k.pack(nexttab) + v.pack(nexttab)
         elif self.type == "s" or self.type == b"s":
-            self.length = len(self.value)
-            lg.debug("%sPacking String value as %d%s" % (tab, self.length, self.type))
-            data = struct.pack("<cB%ds" % (self.length,), self.type, self.length, self.value)
+            try:
+                self.length = len(self.value)
+                spec = "<cB%ds" % self.length
+                lg.debug("%sPacking String value as %d%s" % (tab, self.length, self.type))
+                data = struct.pack(spec, self.type, self.length, self.value)
+            except struct.error as e:
+                raise TlvSpecError(
+                    "While packing spec=%s and value=%s" % (spec, self.value),
+                    str(e)
+                )
         else:
             lg.debug("%sPacking Generic value as <c%s" % (tab, self.type.decode("ascii")))
             data = struct.pack("<c%s" % self.type.decode("ascii"), self.type, self.value)

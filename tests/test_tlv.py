@@ -24,8 +24,8 @@ class TestTLV(unittest.TestCase):
         TestTLV.t = TLV([
             TLV(16),
             TLV(32),
-            TLV(b"ab"),
-            TLV({TLV(b"key"): TLV(b"value")}),
+            TLV("a"),
+            TLV({TLV("key"): TLV("value")}),
             TLV([
                 TLV(2560),
                 TLV(25600),
@@ -38,8 +38,8 @@ class TestTLV(unittest.TestCase):
 
         self.assertEqual(TestTLV.t.value[0].value, 16)
         self.assertEqual(TestTLV.t.value[1].value, 32)
-        self.assertEqual(TestTLV.t.value[2].value, b"ab")
-        self.assertEqual(TestTLV.t.value[3].value[TLV(b"key")], TLV(b"value"))
+        self.assertEqual(TestTLV.t.value[2].value, b"a")
+        self.assertEqual(TestTLV.t.value[3].value[TLV("key")], TLV("value"))
 
 
     def test_0002_write(self):
@@ -65,5 +65,5 @@ class TestTLV(unittest.TestCase):
 
         self.assertEqual(TestTLV.t.value[0].value, 16)
         self.assertEqual(TestTLV.t.value[1].value, 32)
-        self.assertEqual(TestTLV.t.value[2].value, b"ab")
-        self.assertEqual(TestTLV.t.value[3].value[TLV(b"key")], TLV(b"value"))
+        self.assertEqual(TestTLV.t.value[2].value, b"a")
+        self.assertEqual(TestTLV.t.value[3].value[TLV("key")], TLV("value"))
