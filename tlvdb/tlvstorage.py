@@ -129,9 +129,13 @@ class TlvStorage(object):
             ret = instance.unpack(self.dfds[part]["fd"])
 
         if self.backfill is True:
+            # Log with detail
             tmp_instance = TLV(fd=self.dfds[part]["fd"])
             del_size = tmp_instance.size(oldpos)
             self.index.setEmpty(part, oldpos, del_size)
+        else:
+            # Just log to indicate dirty partition
+            self.index.setEmpty(part, oldpos, 0)
 
         # In any case, flush index
         if self.in_trance is False:
@@ -165,7 +169,7 @@ class TlvStorage(object):
             # If we append, remember the partitions last byte
             if self.dfds[part]["last"] == pos:
                 self.dfds[part]["last"] += datalen
-                
+
 
         # No transaction support since we are not writing in a continues blocks
         self.dfds[part]["fd"].seek(pos)
@@ -247,6 +251,7 @@ class TlvStorage(object):
                 lg.critical("Failed to move packed parition...")
                 self.index.reload()
             else:
+                cont["empty"] = {}
                 self.index.flush()
                 # Reopen real partition
                 self.dfds[part]["fd"] = util.create_open(orig_part)

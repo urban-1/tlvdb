@@ -87,7 +87,7 @@ class TestDB(unittest.TestCase):
             lg.debug("testing %d: %s" % (i, t))
             val = ("value%d" % (i)).encode("ascii")
             key = ("key%d" % (i)).encode("ascii")
-            
+
             self.assertEqual(t.value[TLV(key)], TLV(val),
                 msg="%s != %s" % (t.value[TLV(key)], TLV(val)))
 

@@ -241,19 +241,30 @@ class HashIndex(Index):
 
         # read the whole thing
         data = self.fd.read()
+        data_len = len(data)
 
         for i in range(0, self.header.partitions):
             self.partitions.append({"index":{}, "empty": {}, "items": 0})
 
         # parse it
-        for i in range(0, self.header.items):
-            datapos = i*IndexEntry.LENGTH
+        # for i in range(0, self.header.items):
+        datapos = 0
+        while datapos < data_len:
             # lg.debug("Reading index entry from=%d to to=%d" % (datapos, datapos+IndexEntry.LENGTH))
             part, tid, npos = struct.unpack("<BQQ", data[datapos:datapos + IndexEntry.LENGTH])
+            datapos += IndexEntry.LENGTH
 
             if part == 255:
-                # TODO
-                lg.info("Found info!")
+                size = tid
+                part = 0
+                # Split to new format
+                if size != 0:
+                    size<<=1*8
+                    part = tid
+                    part>>7*8
+
+                # Mark it
+                self.partitions[part]["empty"][npos] = size
                 continue
 
             self.partitions[part]["index"][tid] = npos
