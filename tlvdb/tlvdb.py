@@ -1,7 +1,9 @@
 import os
-from tlv import *
-from tlvindex import *
-from tlverrors import *
+
+from tlvdb.tlv import *
+from tlvdb.tlvindex import *
+from tlvdb.tlverrors import *
+import tlvdb.util as util
 
 import logging as lg
 
@@ -26,25 +28,15 @@ class TlvStorage(object):
         self._writeBuffer = {"len": 0, "buf": bytes()}
 
         # open fds
-        # fake open to create
-        if not os.path.exists(index_file):
-            with open(index_file, "a+b") as f:
-                pass
-
-        self.ifd = open(index_file, "r+b")
+        self.ifd = util.create_open(index_file)
         self.index = HashIndex(self.ifd)
 
         # data file descriptors
         self.dfds = []
         for p in range(0, self.getHeader().partitions):
             tmppath = "%s/%s.%d.dat" % (self.dirname, self.basename, p)
-
-            # fake open to create
-            if not os.path.exists(tmppath):
-                with open(tmppath, "a+b") as f:
-                    pass
-
-            tmpfd = open(tmppath, "r+b", buffering=IO_BUFFER_LEN)
+            # Open partition
+            tmpfd = util.create_open(tmppath, "r+b", buffering=IO_BUFFER_LEN)
             self.dfds.append({"fd": tmpfd, "path": tmppath})
 
         self.clean = True

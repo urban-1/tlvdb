@@ -1,67 +1,62 @@
 #!/usr/bin/env python
-import logging
+import os
+import sys
+import glob
 import random
+import logging
+import argparse
+import unittest
+
 logging.basicConfig(level=logging.DEBUG)
 
-from tlv import *
-from tlvdb import *
+from tlvdb.tlv import *
+from tlvdb.tlvdb import *
 
 lg = logging
 
 # restrict logging to low-level implementation
 lg.getLogger("tlv").setLevel(lg.INFO)
 
-IFILE = "./test.idx"
+ROOT = os.path.abspath(os.path.dirname(__file__))
 
-# ITEMS = 100*100
-ITEMS = 100*10
+def main():
+    parser = argparse.ArgumentParser(description='Test arguments')
+    parser.add_argument('-t', '--tests', metavar='N', type=str, nargs='*', help='tests to run')
+    parser.add_argument('-v', '--verbosity', metavar='N', type=int, default=3, help='unittest versobsity level')
+    parser.add_argument('-r', '--reset', type=bool, default=False, help='Cleanup all test data')
+    popts = parser.parse_args()
 
-ts = TlvStorage(IFILE)
-idx = ts.index
+    if popts.reset is True:
+        files = glob.glob('%s/data/*.idx' % ROOT)
+        files.extend(glob.glob('%s/data/*.dat' % ROOT))
+        for f in files:
+            os.remove(f)
 
-def headerDump():
-    print("%15s: %s" % ("Header Version", idx.header.version))
-    print("%15s: %s" % ("Index Type", idx.header.type))
-    print("%15s: %s" % ("Num Entries", idx.header.items))
-    # print("%15s: %s" % ("Num Empty", idx.header.empty))
-    print("%15s: %s" % ("Partitions", idx.header.partitions))
+    if not popts.tests:
+        suite = unittest.TestLoader().discover(os.path.dirname(__file__)+'/tests')
+        #print(suite._tests)
 
-headerDump()
-print("Creating")
-ts.beginTransaction()
+        # Print outline
+        lg.info(' * Going for Interactive net tests = '+str(not tvars.NOINTERACTIVE))
 
-for i in range(0, ITEMS):
-    # t = TLV([
-    #         TLV({
-    #             TLV(("key%d" % (idx.nextid)).encode("ascii")): TLV(("value%d" % (idx.nextid)).encode("ascii"))
-    #         }),
-    #         TLV(idx.nextid),
-    #         TLV(1),
-    #         TLV(b"static")
-    #     ])
-    t = TLV({
-                TLV(("key%d" % (idx.nextid)).encode("ascii")): TLV(("value%d" % (idx.nextid)).encode("ascii"))
-            })
-    ts.create(t)
+        # Run
+        rc = unittest.TextTestRunner(verbosity=popts.verbosity).run(suite)
+    else:
+        lg.info(' * Running specific tests')
 
-ts.endTransaction()
+        suite = unittest.TestSuite()
 
-headerDump()
-print("Getting %d" % (idx.nextid-1))
-t = ts.read(idx.nextid-1)
-print(t)
+        # Load standard tests
+        for t in popts.tests:
+            lg.info('   - Adding tests.%s' % t)
+            test = unittest.TestLoader().loadTestsFromName("tests.%s" % t)
+            suite.addTest(test)
+
+        # Run
+        rc = unittest.TextTestRunner(verbosity=popts.verbosity).run(suite)
+
+    return len(rc.failures)
 
 
-print("Deleting")
-ts.beginTransaction()
-# Delete the second half... from what we just added
-for i in range(idx.nextid-1, int(idx.nextid-ITEMS/2-1), -1):
-    t = ts.delete(i, TLV)
-    # print(t)
-ts.endTransaction()
-
-headerDump()
-
-if random.random() < 1.1:
-    ts.vacuum()
-    headerDump()
+if __name__ == '__main__':
+    sys.exit(main())

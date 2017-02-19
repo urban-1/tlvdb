@@ -1,7 +1,7 @@
 import struct
 import logging as lg
 
-from tlv import *
+from tlvdb.tlv import *
 
 class IndexEntry(BaseIO):
     """
