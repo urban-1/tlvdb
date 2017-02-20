@@ -35,7 +35,7 @@ can be found in `test_tlvdb.py` and low-level TLV packing/unpacking examples in
 
 ## Example
 
-```
+```python
 import os
 import time
 import unittest
