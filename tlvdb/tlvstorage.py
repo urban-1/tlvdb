@@ -188,23 +188,25 @@ class TlvStorage(object):
             lg.debug("Update: Object is fitting in its old place")
             pos = oldpos
         else:
-            lg.debug("Update: Object is NOT fitting")
-            pos = self._findAGoodPossiotion(part, datalen)
-            self._handleEmptying(part, oldpos)
+            with self.dfds[part]["lock"]:
+                lg.debug("Update: Object is NOT fitting")
+                pos = self._findAGoodPossiotion(part, datalen)
+                self._handleEmptying(part, oldpos)
 
-            # If we append, remember the partitions last byte
-            if self.dfds[part]["last"] == pos:
-                self.dfds[part]["last"] += datalen
+                # If we append, remember the partitions last byte
+                if self.dfds[part]["last"] == pos:
+                    self.dfds[part]["last"] += datalen
 
 
         # No transaction support since we are not writing in a continues blocks
-        self.dfds[part]["fd"].seek(pos)
-        self.dfds[part]["fd"].write(new_data)
+        with self.dfds[part]["lock"]:
+            self.dfds[part]["fd"].seek(pos)
+            self.dfds[part]["fd"].write(new_data)
+            self.dfds[part]["fd"].flush()
 
         # Update the index
         self.index.update(part, obj._tlvdb_id, pos)
         self.index.flush()
-        self.dfds[part]["fd"].flush()
 
     def _handleEmptying(self, part, oldpos):
         """
