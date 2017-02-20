@@ -177,6 +177,8 @@ class TlvStorage(object):
 
         # get old index
         part, oldpos = self.index.get(obj._tlvdb_id)
+        if not oldpos:
+            raise IndexNotFoundError("Object with id=%d not found" % obj._tlvdb_id)
 
         new_data = obj.pack()
         old_data = old.pack()
@@ -184,11 +186,12 @@ class TlvStorage(object):
         datalen = len(new_data)
 
         # See if we can fit it!
-        if datalen <= len(old_data):
-            lg.debug("Update: Object is fitting in its old place")
-            pos = oldpos
-        else:
-            with self.dfds[part]["lock"]:
+        pos = -1
+        with self.dfds[part]["lock"]:
+            if datalen <= len(old_data):
+                lg.debug("Update: Object is fitting in its old place")
+                pos = oldpos
+            else:
                 lg.debug("Update: Object is NOT fitting")
                 pos = self._findAGoodPossiotion(part, datalen)
                 self._handleEmptying(part, oldpos)
@@ -198,8 +201,8 @@ class TlvStorage(object):
                     self.dfds[part]["last"] += datalen
 
 
-        # No transaction support since we are not writing in a continues blocks
-        with self.dfds[part]["lock"]:
+            # No transaction support since we are not writing in a continues blocks
+            if not pos: print(pos)
             self.dfds[part]["fd"].seek(pos)
             self.dfds[part]["fd"].write(new_data)
             self.dfds[part]["fd"].flush()

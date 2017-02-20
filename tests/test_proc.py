@@ -44,9 +44,14 @@ def delete(cls, num):
     with lock:
         try:
             tmp = random.choice(IDS)
-            lg.info("Skipping update... nothing in there")
-        except:
+
+            if not tmp:
+                lg.info("Skipping update... nothing in there")
+                return
+        except IndexError as e:
             return
+        except Exception as e:
+            lg.waring("WTF: %s" % str(e))
 
     lg.info("%d: Deleting %s" % (num, tmp))
     cls.ts.delete(tmp)
@@ -62,10 +67,19 @@ def update(cls, num):
     with lock:
         try:
             tmp = random.choice(IDS)
-            told = cls.ts.read(tmp)
-            lg.info("Skipping update... nothing in there")
-        except:
+
+            if not tmp:
+                lg.info("Skipping update... nothing in there")
+                return
+            try:
+                told = cls.ts.read(tmp)
+            except IndexNotFoundError:
+                lg.info("Skipping node we cannot read..")
+                return
+        except IndexError as e:
             return
+        except Exception as e:
+            lg.waring("WTF: %s" % str(e))
 
     t = TLV({
                 TLV(rand_str()): TLV(rand_str()),
@@ -74,7 +88,11 @@ def update(cls, num):
     t._tlvdb_id = told._tlvdb_id
 
     lg.info("%d: Updating %d to %s" % (num, tmp, t))
-    tmp = cls.ts.update(t)
+    try:
+        tmp = cls.ts.update(t)
+    except IndexNotFoundError as e:
+        lg.debug("Shiiit! Someone was faster: %s" % str(e))
+        pass
 
     with lock:
         IDS.append(tmp)
