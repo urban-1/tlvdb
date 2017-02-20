@@ -22,11 +22,12 @@ class TlvStorage(object):
     VERSION = 1
     """Storage version"""
 
-    def __init__(self, index_file, backfill=False):
+    def __init__(self, index_file, backfill=False, vacuum_thres = 0.1):
         """
         :param str index_file: Path to the main index file
         """
         self.backfill = backfill
+        self.vacuum_thres = vacuum_thres
 
         # Sort out files
         self.basename = os.path.basename(index_file)
@@ -267,9 +268,15 @@ class TlvStorage(object):
                 cont["lock"].release()
                 continue
 
+            if items and self.vacuum_thres > empty/items:
+                lg.info("Skipping ... partition less than threshold (thres=%f <> frag=%f)" % (self.vacuum_thres, empty/items))
+                cont["lock"].release()
+                continue
+
+
             # Create swap
             swap_part = len(self.dfds)
-            lg.info("Vacuum: partition %d" % swap_part)
+            lg.info("Vacuum: Starting Partition %d" % swap_part)
             swap_path = "%s/%s.%d.dat" % (self.dirname, self.basename, swap_part)
             self.dfds.append({})
             self.dfds[swap_part]["last"] = 0
@@ -318,23 +325,25 @@ class TlvStorage(object):
 
             # Clean up real partition
             self.dfds[part]["fd"].close()
-            del self.dfds[part]["last"]
+            if "last" in self.dfds[part]:
+                del self.dfds[part]["last"]
 
             # DANGEROUS PART: SHOULD NOT BE INTERUPTED
             orig_part = "%s/%s.%d.dat" % (self.dirname, self.basename, part)
-            with DelayedInterrupt(signal.SIGINT):
-                try:
-                    os.rename(swap_path, orig_part)
-                except:
-                    lg.critical("Failed to move packed parition...")
-                    self.index.reload()
-                else:
-                    lg.info(" ...Done ")
-                    cont["empty"] = {}
-                    self.index.flush()
-                finally:
-                    # Reopen real partition
-                    self.dfds[part]["fd"] = util.create_open(orig_part)
+
+            # with DelayedInterrupt(signal.SIGINT):
+            try:
+                os.rename(swap_path, orig_part)
+            except:
+                lg.critical("Failed to move packed parition...")
+                self.index.reload()
+            else:
+                lg.info(" ...Done ")
+                cont["empty"] = {}
+                self.index.flush()
+            finally:
+                # Reopen real partition
+                self.dfds[part]["fd"] = util.create_open(orig_part)
 
             # Time to release, this partition is done
             cont["lock"].release()

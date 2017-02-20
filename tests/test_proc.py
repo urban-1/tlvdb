@@ -102,6 +102,10 @@ def update(cls, num):
         IDS.append(tmp)
         cls.updated += 1
 
+def vacuum(cls, num):
+    """blocks all!"""
+    cls.ts.vacuum()
+
 q = Queue()
 def worker_job(base):
     while True:
@@ -138,7 +142,9 @@ class TestProc(unittest.TestCase):
             j.start()
 
         for num in range(TestProc.MOVES):
-            action = random.choice(["create", "create", "update", "delete"])
+            action = random.choice([
+                "create", "create", "update", "delete",
+                "create", "create", "update", "delete", "vacuum"])
             q.put({"method": action, "num": num})
 
 
