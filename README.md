@@ -25,15 +25,8 @@ The main features are:
 - Thread-safe
 - Defragmentation threshold
 
-## Hacking
 
-I am afraid you will have to look into the [tests](tests) folder for now. A high
-level usage example would be [test_objdb.py](tests/test_objdb.py) showing how
-you can serialize and store custom objects. A middle level use with raw TLV items
-can be found in `test_tlvdb.py` and low-level TLV packing/unpacking examples in
-`test_tlv.py`
-
-## Example
+## Example Usage
 
 ```python
 import os
@@ -61,6 +54,15 @@ ts = TlvStorage(IFILE)
 
 p = Person("Andreas", ["0712312312", "0897408123"], 30)
 pid = ts.create(p)
-p2 = ts.read(TestODB.pid, klass=Person)
+p2 = ts.read(pid, klass=Person)
 lg.debug("Got %s" % p2)
 ```
+
+## Hacking
+
+I am afraid you will have to look into the [tests](tests) folder for now. A high
+level usage example would be [test_objdb.py](tests/test_objdb.py) showing how
+you can serialize and store custom objects. A middle level use with raw TLV items
+can be found in `test_tlvdb.py` and low-level TLV packing/unpacking examples in
+`test_tlv.py`
+
