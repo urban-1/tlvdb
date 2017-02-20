@@ -128,14 +128,8 @@ class TlvStorage(object):
             self.dfds[part]["fd"].seek(oldpos)
             ret = instance.unpack(self.dfds[part]["fd"])
 
-        if self.backfill is True:
-            # Log with detail
-            tmp_instance = TLV(fd=self.dfds[part]["fd"])
-            del_size = tmp_instance.size(oldpos)
-            self.index.setEmpty(part, oldpos, del_size)
-        else:
-            # Just log to indicate dirty partition
-            self.index.setEmpty(part, oldpos, 0)
+        # Handle index
+        self._handleEmptying(part, oldpos)
 
         # In any case, flush index
         if self.in_trance is False:
@@ -165,6 +159,7 @@ class TlvStorage(object):
         else:
             lg.debug("Update: Object is NOT fitting")
             pos = self._findAGoodPossiotion(part, datalen)
+            self._handleEmptying(part, oldpos)
 
             # If we append, remember the partitions last byte
             if self.dfds[part]["last"] == pos:
@@ -180,12 +175,26 @@ class TlvStorage(object):
         self.index.flush()
         self.dfds[part]["fd"].flush()
 
+    def _handleEmptying(self, part, oldpos):
+        """
+        Called when something is moved or deleted
+        """
+        if self.backfill is True:
+            # Log with detail
+            tmp_instance = TLV(fd=self.dfds[part]["fd"])
+            del_size = tmp_instance.size(oldpos)
+            self.index.setEmpty(part, oldpos, del_size)
+        else:
+            # Just log to indicate dirty partition
+            self.index.setEmpty(part, oldpos, 0)
+
+
     def close(self):
         self.index.close()
         for fd in self.dfds:
             fd["fd"].close()
 
-    def vacuum(self):
+    def vacuum(self, force=False):
         """
         Compact the free space in partitions:
 
@@ -211,7 +220,13 @@ class TlvStorage(object):
 
         # Iterate, read, write
         for part, cont in enumerate(self.index.partitions):
-            lg.info("Vacuum: partition %d" % part)
+            empty = len(cont["empty"])
+            items = cont["items"]
+            lg.info("Vacuum: partition %d, status %d/%d" % (part, empty, items))
+            if (empty == 0 and not force):
+                lg.info("Skipping ... partition is clean")
+                continue
+            lg.info(" ... Vacuum: Starting ")
 
             for tid, pos in cont["index"].items():
                 if pos == 0:

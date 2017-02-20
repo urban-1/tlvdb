@@ -20,7 +20,7 @@ class TestDB(unittest.TestCase):
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         cls.IFILE = "%s/data/test.idx" % ROOT
-        cls.ITEMS = 10
+        cls.ITEMS = 100000
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestDB.ts.index
 
