@@ -20,8 +20,10 @@ implement a custom database might find it a good starting point
 The main features are:
 
 - TLV implemenation based on `struct` python module
-- Binary file for storing
-- Hash index for items in the storage
+- Binary file storage
+- Hash index for items
+- Thread-safe
+- Defragmentation threshold
 
 ## Hacking
 
