@@ -1,5 +1,6 @@
 import struct
 import logging as lg
+from multiprocessing import RLock
 
 from tlvdb.tlv import TLV, BaseIO
 
@@ -106,20 +107,21 @@ class Index(object):
         self.fd = fd
         self.header = None
         self.clean = True
+        self.lock = RLock()
         self.load()
 
     def load(self):
         """
         Read the index from its file
         """
-
-        # read the header
-        self.header = IndexHeader(self.fd)
-        self.header.read()
-        if self.header.version == -1:
-            lg.debug("No header in the index file... initializing")
-            self._initHeader()
-        self._loadIndex()
+        with self.lock:
+            # read the header
+            self.header = IndexHeader(self.fd)
+            self.header.read()
+            if self.header.version == -1:
+                lg.debug("No header in the index file... initializing")
+                self._initHeader()
+            self._loadIndex()
 
     def create(self, part, id, pos):
         pass
@@ -140,14 +142,17 @@ class Index(object):
         pass
 
     def flush(self):
-        lg.info("Flushing Index")
-        self.header.write()
-        self._dumpIndex()
-        self.fd.flush()
-        self.fd.truncate()
+        with self.lock:
+            lg.info("Flushing Index")
+            self.header.write()
+            self._dumpIndex()
+            self.fd.flush()
+            self.fd.truncate()
 
     def close(self):
-        self.fd.close()
+        # make sure no one is writing/flushing
+        with self.lock:
+            self.fd.close()
 
 class HashIndex(Index):
     """
@@ -181,37 +186,50 @@ class HashIndex(Index):
         """
         Clean all internal variables and call load()
         """
-        self.partitions = []
-        self.nextid = 1
+        with self.lock:
+            self.partitions = []
+            self.nextid = 1
+
+        # This will re-lock
         self.load()
 
 
     def create(self, part, tid, pos):
-        self.clean = False
-        # Start indexing from 1: 0 is empty!
-        self.partitions[part]["index"][tid] = pos + 1
-        self.partitions[part]["items"] += 1
-        self.header.items += 1
-        self.nextid += 1
+        with self.lock:
+            self.clean = False
+            self.header.items += 1
+            self.nextid += 1
+
+        with self.partitions[part]["lock"]:
+            # Start indexing from 1: 0 is empty!
+            self.partitions[part]["index"][tid] = pos + 1
+            self.partitions[part]["items"] += 1
 
     def update(self, part, tid, pos):
-        self.clean = False
-        # Start indexing from 1: 0 is empty!
-        self.partitions[part]["index"][tid] = pos + 1
+        with self.lock:
+            self.clean = False
+
+        with self.partitions[part]["lock"]:
+            # Start indexing from 1: 0 is empty!
+            self.partitions[part]["index"][tid] = pos + 1
 
     def get(self, tlvid):
-        for part, p in enumerate(self.partitions):
-            if tlvid in p["index"]:
-                return part, p["index"][tlvid] - 1
-        return False, None
+        with self.lock:
+            for part, p in enumerate(self.partitions):
+                if tlvid in p["index"]:
+                    return part, p["index"][tlvid] - 1
+            return False, None
 
 
     def delete(self, tlvid):
         """
         Remove an object from the index and return its old position
         """
-        for part, p in enumerate(self.partitions):
-            if tlvid in p["index"]:
+        with self.lock:
+            for part, p in enumerate(self.partitions):
+                if tlvid not in p["index"]:
+                    continue
+
                 # DEPRECATED: Check if already deleted...
                 # This is a reserved position in the index
                 if p["index"][tlvid] == 0:
@@ -223,12 +241,17 @@ class HashIndex(Index):
                 self.clean = False
                 return part, oldpos
 
-        return False, None
+            return False, None
 
     def setEmpty(self, part, oldpos, del_size):
-        self.partitions[part]["empty"][oldpos] = del_size
+        # Simple in memory lock
+        with self.partitions[part]["lock"]:
+            self.partitions[part]["empty"][oldpos] = del_size
 
     def _initHeader(self):
+        """
+        No need to lock ... parent did
+        """
         self.header.version = 1
         self.header.type = IndexHeader.TYPE_HASH
         self.header.items = 0
@@ -236,6 +259,9 @@ class HashIndex(Index):
         self.header.write()
 
     def _loadIndex(self):
+        """
+        No need to lock ... parent did
+        """
         # skip header (already read)
         self.fd.seek(IndexHeader.LENGTH)
 
@@ -244,7 +270,12 @@ class HashIndex(Index):
         data_len = len(data)
 
         for i in range(0, self.header.partitions):
-            self.partitions.append({"index":{}, "empty": {}, "items": 0})
+            self.partitions.append({
+                "index": {},
+                "empty": {},
+                "items": 0,
+                "lock": RLock()
+            })
 
         # parse it
         # for i in range(0, self.header.items):
@@ -277,6 +308,9 @@ class HashIndex(Index):
                 self.nextid = tid + 1
 
     def _dumpIndex(self):
+        """
+        No need to lock ... parent did
+        """
         # skip header (already read)
         self.fd.seek(IndexHeader.LENGTH)
 
@@ -299,6 +333,7 @@ class HashIndex(Index):
         Debuging info
         """
         s = ""
+        s = "       Next ID: %d\n\n" % self.nextid
         for part, cont in enumerate(self.partitions):
             s = (
                 "%s"
