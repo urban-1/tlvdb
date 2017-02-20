@@ -5,6 +5,10 @@ import random
 import logging
 import unittest
 from threading import Lock, Thread
+try:
+    from queue import Queue
+except:
+    from Queue import Queue
 
 from tlvdb.tlv import TLV
 from tlvdb.tlvstorage import TlvStorage
@@ -98,6 +102,14 @@ def update(cls, num):
         IDS.append(tmp)
         cls.updated += 1
 
+q = Queue()
+def worker_job(base):
+    while True:
+        args = q.get()
+        globals()[args["method"]](TestProc, args["num"])
+        q.task_done()
+
+
 class TestProc(unittest.TestCase):
     @classmethod
     def headerDump(cls):
@@ -108,24 +120,30 @@ class TestProc(unittest.TestCase):
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         cls.IFILE = "%s/data/proc.idx" % ROOT
-        cls.MOVES = 1000
+        cls.MOVES = 1000*10
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestProc.ts.index
         cls.created = 0
         cls.updated = 0
         cls.deleted = 0
+        cls.NUM_THREADS = 1
 
     def test_0001_go_wild(self):
-        jobs = []
+        workers = []
+
+        for i in range(TestProc.NUM_THREADS):
+            j = Thread(target=worker_job, args=(TestProc,))
+            workers.append(j)
+            j.setDaemon(True)
+            j.start()
+
         for num in range(TestProc.MOVES):
             action = random.choice(["create", "create", "update", "delete"])
-            lg.debug("Starting %s" % action)
-            j = Thread(target=globals()[action], args=(TestProc, num))
-            j.start()
-            jobs.append(j)
+            q.put({"method": action, "num": num})
 
-        for j in jobs:
-            j.join()
+
+        q.join()
+
 
         # TestProc.ts.vacuum()
 
@@ -137,6 +155,7 @@ class TestProc(unittest.TestCase):
         TestProc.headerDump()
 
         lg.info("c=%d, u=%d, d=%d" % (TestProc.created, TestProc.updated, TestProc.deleted))
+
         for i in range(TestProc.idx.nextid-1, 0, -1):
             try:
                 t = TestProc.ts.read(i)
