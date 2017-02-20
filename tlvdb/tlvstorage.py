@@ -1,11 +1,13 @@
 import os
 import time
+import signal
 import logging as lg
 
 from tlvdb import util
 from tlvdb.tlv import TLV
 from tlvdb.tlvindex import HashIndex
 from tlvdb.tlverrors import *
+from tlvdb.util import DelayedInterrupt
 
 # x MB buffer
 IO_BUFFER_LEN = 1000000
@@ -257,19 +259,22 @@ class TlvStorage(object):
 
             # Clean up real partition
             self.dfds[part]["fd"].close()
+            del self.dfds[part]["last"]
 
             # DANGEROUS PART: SHOULD NOT BE INTERUPTED
             orig_part = "%s/%s.%d.dat" % (self.dirname, self.basename, part)
-            try:
-                os.rename(swap_path, orig_part)
-            except:
-                lg.critical("Failed to move packed parition...")
-                self.index.reload()
-            else:
-                cont["empty"] = {}
-                self.index.flush()
-                # Reopen real partition
-                self.dfds[part]["fd"] = util.create_open(orig_part)
+            with DelayedInterrupt(signal.SIGINT):
+                try:
+                    os.rename(swap_path, orig_part)
+                except:
+                    lg.critical("Failed to move packed parition...")
+                    self.index.reload()
+                else:
+                    cont["empty"] = {}
+                    self.index.flush()
+                finally:
+                    # Reopen real partition
+                    self.dfds[part]["fd"] = util.create_open(orig_part)
 
     def getHeader(self):
         return self.index.header
