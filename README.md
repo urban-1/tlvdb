@@ -48,7 +48,7 @@ class Person(IPackable):
         self.numbers = numbers
         self.age = age
 
-
+ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 IFILE = "%s/data/test_obj.idx" % ROOT
 ts = TlvStorage(IFILE)
 
