@@ -66,3 +66,14 @@ you can serialize and store custom objects. A middle level use with raw TLV item
 can be found in `test_tlvdb.py` and low-level TLV packing/unpacking examples in
 `test_tlv.py`
 
+## Performance
+
+Performance is not a concern at this stage of this project... However, while
+testing thread safety I found out that:
+
+- 5-7 threads seems to be the most efficient setup
+- python3 is at least 1ms/transaction faster than python2
+- pypy is under-performing with +2ms and most importantly hits DEADLOCKS
+- threading is b***h :)
+
+[All testing done on a laptop, ubuntu 14, nfts partition via unittests]

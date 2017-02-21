@@ -91,6 +91,7 @@ class TlvStorage(object):
         Create a new entry in the database from the given tlv
         """
         with self.index.lock:
+            lg.info("create: Locked")
             # 1. Find next available ID
             nextid = self.index.nextid
 
@@ -118,6 +119,7 @@ class TlvStorage(object):
                 with self.dfds[part]["lock"]:
                     self.dfds[part]["fd"].flush()
 
+            lg.info("create: Releasing")
             return nextid
 
     def read(self, tid, klass=TLV, criteria=None):
@@ -173,44 +175,47 @@ class TlvStorage(object):
         if not hasattr(obj, "_tlvdb_id"):
             raise WrongInstanceError()
 
-        # Read original object
-        old = self.read(obj._tlvdb_id)
+        # Update is doing multiple operations on the index and thus should be
+        # locked ALL the time... we dont want it changing in between...
+        with self.index.lock:
+            # Read original object
+            old = self.read(obj._tlvdb_id)
 
-        # get old index
-        part, oldpos = self.index.get(obj._tlvdb_id)
-        if not oldpos:
-            raise IndexNotFoundError("Object with id=%d not found" % obj._tlvdb_id)
+            # get old index
+            part, oldpos = self.index.get(obj._tlvdb_id)
+            if not oldpos:
+                raise IndexNotFoundError("Object with id=%d not found" % obj._tlvdb_id)
 
-        new_data = obj.pack()
-        old_data = old.pack()
+            new_data = obj.pack()
+            old_data = old.pack()
 
-        datalen = len(new_data)
+            datalen = len(new_data)
 
-        # See if we can fit it!
-        pos = -1
-        with self.dfds[part]["lock"]:
-            if datalen <= len(old_data):
-                lg.debug("Update: Object is fitting in its old place")
-                pos = oldpos
-            else:
-                lg.debug("Update: Object is NOT fitting")
-                pos = self._findAGoodPossiotion(part, datalen)
-                self._handleEmptying(part, oldpos)
+            # See if we can fit it!
+            pos = -1
+            with self.dfds[part]["lock"]:
+                if datalen <= len(old_data):
+                    lg.debug("Update: Object is fitting in its old place")
+                    pos = oldpos
+                else:
+                    lg.debug("Update: Object is NOT fitting")
+                    pos = self._findAGoodPossiotion(part, datalen)
+                    self._handleEmptying(part, oldpos)
 
-                # If we append, remember the partitions last byte
-                if self.dfds[part]["last"] == pos:
-                    self.dfds[part]["last"] += datalen
+                    # If we append, remember the partitions last byte
+                    if self.dfds[part]["last"] == pos:
+                        self.dfds[part]["last"] += datalen
 
 
-            # No transaction support since we are not writing in a continues blocks
-            if not pos: print(pos)
-            self.dfds[part]["fd"].seek(pos)
-            self.dfds[part]["fd"].write(new_data)
-            self.dfds[part]["fd"].flush()
+                # No transaction support since we are not writing in a continues blocks
+                if not pos: print(pos)
+                self.dfds[part]["fd"].seek(pos)
+                self.dfds[part]["fd"].write(new_data)
+                self.dfds[part]["fd"].flush()
 
-        # Update the index
-        self.index.update(part, obj._tlvdb_id, pos)
-        self.index.flush()
+            # Update the index
+            self.index.update(part, obj._tlvdb_id, pos)
+            self.index.flush()
 
     def _handleEmptying(self, part, oldpos):
         """
@@ -257,20 +262,17 @@ class TlvStorage(object):
 
         # Iterate, read, write
         for part, cont in enumerate(self.index.partitions):
-            # Lock that partition (index level)
-            cont["lock"].acquire()
+
 
             empty = len(cont["empty"])
             items = cont["items"]
             lg.info("Vacuum: partition %d, status %d/%d" % (part, empty, items))
             if (empty == 0 and not force):
                 lg.info("Skipping ... partition is clean")
-                cont["lock"].release()
                 continue
 
             if items and self.vacuum_thres > empty/items:
                 lg.info("Skipping ... partition less than threshold (thres=%f <> frag=%f)" % (self.vacuum_thres, empty/items))
-                cont["lock"].release()
                 continue
 
 
@@ -346,13 +348,13 @@ class TlvStorage(object):
                 self.dfds[part]["fd"] = util.create_open(orig_part)
 
             # Time to release, this partition is done
-            cont["lock"].release()
             self.dfds[part]["lock"].release()
 
 
         # Be free...
+        self.index.lock.release()
         self.lock.release()
-        self.index.lock.acquire()
+        lg.info(" ... Vacuum: Stopped ")
 
     def getHeader(self):
         return self.index.header

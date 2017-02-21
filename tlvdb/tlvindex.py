@@ -200,7 +200,6 @@ class HashIndex(Index):
             self.header.items += 1
             self.nextid += 1
 
-        with self.partitions[part]["lock"]:
             # Start indexing from 1: 0 is empty!
             self.partitions[part]["index"][tid] = pos + 1
             self.partitions[part]["items"] += 1
@@ -209,7 +208,6 @@ class HashIndex(Index):
         with self.lock:
             self.clean = False
 
-        with self.partitions[part]["lock"]:
             # Start indexing from 1: 0 is empty!
             self.partitions[part]["index"][tid] = pos + 1
 
@@ -244,8 +242,8 @@ class HashIndex(Index):
             return False, None
 
     def setEmpty(self, part, oldpos, del_size):
-        # Simple in memory lock
-        with self.partitions[part]["lock"]:
+        with self.lock:
+            # Simple in memory lock
             self.partitions[part]["empty"][oldpos] = del_size
 
     def _initHeader(self):
@@ -273,8 +271,7 @@ class HashIndex(Index):
             self.partitions.append({
                 "index": {},
                 "empty": {},
-                "items": 0,
-                "lock": RLock()
+                "items": 0
             })
 
         # parse it

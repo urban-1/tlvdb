@@ -4,7 +4,7 @@ import string
 import random
 import logging
 import unittest
-from threading import Lock, Thread
+from threading import Lock, Thread, currentThread
 try:
     from queue import Queue, Empty
 except:
@@ -25,7 +25,7 @@ IDS=[]
 lock = Lock()
 
 
-def create(cls, num):
+def create(cls, tag):
     """
     create a 2-key TLV entry
     """
@@ -35,14 +35,16 @@ def create(cls, num):
                 TLV(rand_str()): TLV(rand_str())
             })
 
-    lg.info("%d: Creating %s" % (num, t))
+    lg.info("%s: Creating %s" % (tag, t))
     tmp = cls.ts.create(t)
+    lg.info("%s: Creating: index done" % tag)
+
     with lock:
-        lg.info("%d: Added: %d" % (num, tmp))
+        lg.info("%s: Added: %d" % (tag, tmp))
         IDS.append(tmp)
         cls.created += 1
 
-def delete(cls, num):
+def delete(cls, tag):
     """
     delete a random entry
     """
@@ -59,17 +61,19 @@ def delete(cls, num):
         except Exception as e:
             lg.waring("WTF: %s" % str(e))
 
-    lg.info("%d: Deleting %s" % (num, tmp))
+    lg.info("%s: Deleting %s" % (tag, tmp))
     cls.ts.delete(tmp)
+    lg.info("%s: Deleting: index done" % tag)
 
     with lock:
         cls.deleted += 1
 
-def update(cls, num):
+def update(cls, tag):
     """
     update a random entry with another random entry
     """
     global updated
+
     with lock:
         try:
             tmp = random.choice(IDS)
@@ -77,7 +81,9 @@ def update(cls, num):
             if not tmp:
                 lg.info("Skipping update... nothing in there")
                 return
+
             try:
+                lg.info("%s: Reading %d" % (tag, tmp))
                 told = cls.ts.read(tmp)
             except IndexNotFoundError:
                 lg.info("Skipping node we cannot read..")
@@ -93,18 +99,18 @@ def update(cls, num):
             })
     t._tlvdb_id = told._tlvdb_id
 
-    lg.info("%d: Updating %d to %s" % (num, tmp, t))
+    lg.info("%s: Updating %d to %s" % (tag, tmp, t))
     try:
         tmp = cls.ts.update(t)
     except IndexNotFoundError as e:
         lg.debug("Shiiit! Someone was faster: %s" % str(e))
-        pass
+        return
 
     with lock:
         IDS.append(tmp)
         cls.updated += 1
 
-def vacuum(cls, num):
+def vacuum(cls, tag):
     """blocks all!"""
     with lock:
         cls.vacuum += 1
@@ -112,16 +118,24 @@ def vacuum(cls, num):
 
 q = Queue()
 def worker_job(base):
+    global q
+    name = currentThread().getName()
+    lg.info("Thread %s started" % name)
     while True:
         try:
+            lg.info("Thread %s reading" % name)
             args = q.get()
-            globals()[args["method"]](TestProc, args["num"])
+            # These threads dont seem to want to exit peacefully...
+            lg.info("Thread %s-%s got %s" % (name, args["num"], args["method"]))
+            globals()[args["method"]](TestProc, "%s-%s" % (name, args["num"]))
             q.task_done()
         except Empty:
-            q.task_done()
+            break
         except Exception as e:
             q.task_done()
-            print(str(e))
+            pass
+
+    lg.info("Thread %s done" % name)
 
 
 class TestProc(unittest.TestCase):
@@ -134,14 +148,14 @@ class TestProc(unittest.TestCase):
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         cls.IFILE = "%s/data/proc.idx" % ROOT
-        cls.MOVES = 1000
+        cls.MOVES = 10000
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestProc.ts.index
         cls.created = 0
         cls.updated = 0
         cls.deleted = 0
         cls.vacuum = 0
-        cls.NUM_THREADS = 2
+        cls.NUM_THREADS = 5
 
     def test_0001_go_wild(self):
         choices = [ "create" ] * 9
@@ -155,17 +169,15 @@ class TestProc(unittest.TestCase):
             action = random.choice(choices)
             q.put({"method": action, "num": num})
 
-
-
-
         TestProc.s = time.time()
         for i in range(TestProc.NUM_THREADS):
             j = Thread(target=worker_job, args=(TestProc,))
             workers.append(j)
-            j.setDaemon(True)
+            j.daemon = True
             j.start()
 
         q.join()
+
         TestProc.e = time.time()
 
 
@@ -195,6 +207,6 @@ class TestProc(unittest.TestCase):
             try:
                 t = TestProc.ts.read(i)
             except IndexNotFoundError as e:
-                lg.info("Delete value %d: %s" % (i, str(e)))
+                lg.info("Delete value %s: %s" % (i, str(e)))
                 continue
-            lg.info("testing %d: %s" % (i, t))
+            lg.info("testing %s: %s" % (i, t))
