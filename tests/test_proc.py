@@ -120,6 +120,7 @@ def worker_job(base):
         except Empty:
             q.task_done()
         except Exception as e:
+            q.task_done()
             print(str(e))
 
 
@@ -133,7 +134,7 @@ class TestProc(unittest.TestCase):
     def setUpClass(cls):
         ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
         cls.IFILE = "%s/data/proc.idx" % ROOT
-        cls.MOVES = 1000*10
+        cls.MOVES = 1000
         cls.ts = TlvStorage(cls.IFILE)
         cls.idx = TestProc.ts.index
         cls.created = 0
@@ -143,24 +144,26 @@ class TestProc(unittest.TestCase):
         cls.NUM_THREADS = 2
 
     def test_0001_go_wild(self):
-        workers = []
-        for i in range(TestProc.NUM_THREADS):
-            j = Thread(target=worker_job, args=(TestProc,))
-            workers.append(j)
-            j.setDaemon(True)
-            j.start()
-
         choices = [ "create" ] * 9
         choices.extend(["update"] * 5)
         choices.extend(["delete"] * 5)
         choices.extend(["vacuum"])
 
-        TestProc.s = time.time()
+        workers = []
 
         for num in range(TestProc.MOVES):
             action = random.choice(choices)
             q.put({"method": action, "num": num})
 
+
+
+
+        TestProc.s = time.time()
+        for i in range(TestProc.NUM_THREADS):
+            j = Thread(target=worker_job, args=(TestProc,))
+            workers.append(j)
+            j.setDaemon(True)
+            j.start()
 
         q.join()
         TestProc.e = time.time()
