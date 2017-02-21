@@ -6,9 +6,9 @@ import logging
 import unittest
 from threading import Lock, Thread
 try:
-    from queue import Queue
+    from queue import Queue, Empty
 except:
-    from Queue import Queue
+    from Queue import Queue, Empty
 
 from tlvdb.tlv import TLV
 from tlvdb.tlvstorage import TlvStorage
@@ -16,7 +16,9 @@ from tlvdb.tlverrors import *
 
 lg = logging.getLogger("tests")
 
-def rand_str(N=10):
+def rand_str(N=None):
+    if N is None:
+        N = random.randint(15,20)
     return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(N))
 
 IDS=[]
@@ -104,14 +106,21 @@ def update(cls, num):
 
 def vacuum(cls, num):
     """blocks all!"""
+    with lock:
+        cls.vacuum += 1
     cls.ts.vacuum()
 
 q = Queue()
 def worker_job(base):
     while True:
-        args = q.get()
-        globals()[args["method"]](TestProc, args["num"])
-        q.task_done()
+        try:
+            args = q.get()
+            globals()[args["method"]](TestProc, args["num"])
+            q.task_done()
+        except Empty:
+            q.task_done()
+        except Exception as e:
+            print(str(e))
 
 
 class TestProc(unittest.TestCase):
@@ -130,37 +139,54 @@ class TestProc(unittest.TestCase):
         cls.created = 0
         cls.updated = 0
         cls.deleted = 0
-        cls.NUM_THREADS = 1
+        cls.vacuum = 0
+        cls.NUM_THREADS = 2
 
     def test_0001_go_wild(self):
         workers = []
-
         for i in range(TestProc.NUM_THREADS):
             j = Thread(target=worker_job, args=(TestProc,))
             workers.append(j)
             j.setDaemon(True)
             j.start()
 
+        choices = [ "create" ] * 9
+        choices.extend(["update"] * 5)
+        choices.extend(["delete"] * 5)
+        choices.extend(["vacuum"])
+
+        TestProc.s = time.time()
+
         for num in range(TestProc.MOVES):
-            action = random.choice([
-                "create", "create", "update", "delete",
-                "create", "create", "update", "delete", "vacuum"])
+            action = random.choice(choices)
             q.put({"method": action, "num": num})
 
 
         q.join()
+        TestProc.e = time.time()
 
 
-        # TestProc.ts.vacuum()
+    def test_0002_print_stats(self):
+        TestProc.headerDump()
+        totalTrans = TestProc.created + TestProc.updated + TestProc.deleted
+        totalTime = (TestProc.e - TestProc.s) * 1000
+        print("Total Transactions: %d" % totalTrans)
+        print("        Total Time: %.2f ms" % totalTime)
+        print("           Vacuums: %d" % TestProc.vacuum)
+        print("           Created: %d" % TestProc.created)
+        print("           Updated: %d" % TestProc.updated)
+        print("           Deleted: %d" % TestProc.deleted)
+        print("")
+        print("Time per transaction: %.2f ms (excluding vacuum from count)" % (totalTime/totalTrans))
+        print("")
+        print("         # Threads: %d" % TestProc.NUM_THREADS)
+        print("       Total Moves: %d" % TestProc.MOVES)
 
-    def test_0002_read_all(self):
+    def test_0004_read_all(self):
         # global created, updated, deleted
         TestProc.ts = TlvStorage(TestProc.IFILE)
         TestProc.idx = TestProc.ts.index
         lg.info("")
-        TestProc.headerDump()
-
-        lg.info("c=%d, u=%d, d=%d" % (TestProc.created, TestProc.updated, TestProc.deleted))
 
         for i in range(TestProc.idx.nextid-1, 0, -1):
             try:
