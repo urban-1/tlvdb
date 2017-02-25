@@ -22,9 +22,12 @@ class TlvStorage(object):
     VERSION = 1
     """Storage version"""
 
-    def __init__(self, index_file, backfill=False, vacuum_thres = 0.1):
+    def __init__(self, index_file, vacuum_thres = 0.1, backfill=False):
         """
         :param str index_file: Path to the main index file
+        :param bool backfill: Should we look for a better place to write? (not used)
+        :param float vacuum_thres: Ratio of empty items over items in the index
+                                   that will cause a vacuum to not abort
         """
         self.backfill = backfill
         self.vacuum_thres = vacuum_thres

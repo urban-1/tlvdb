@@ -63,8 +63,8 @@ lg.debug("Got %s" % p2)
 I am afraid you will have to look into the [tests](tests) folder for now. A high
 level usage example would be [test_objdb.py](tests/test_objdb.py) showing how
 you can serialize and store custom objects. A middle level use with raw TLV items
-can be found in `test_tlvdb.py` and low-level TLV packing/unpacking examples in
-`test_tlv.py`
+can be found in [test_tlvdb.py](tests/test_tlvdb.py) and low-level TLV p
+acking/unpacking examples in [test_tlv.py](tests/test_tlv.py)
 
 ## Performance
 
