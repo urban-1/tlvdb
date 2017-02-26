@@ -12,6 +12,7 @@ from tlvdb.tlv import TLV
 from tlvdb.tlvindex import HashIndex
 from tlvdb.tlverrors import *
 from tlvdb.util import DelayedInterrupt
+from tlvdb.tlvbtreeindex import BPlusTreeIndex
 
 # x MB buffer
 IO_BUFFER_LEN = 1000000
@@ -21,6 +22,9 @@ class TlvStorage(object):
 
     VERSION = 1
     """Storage version"""
+
+    MAX_INDEXES = 10
+    """Maximum number of cached indexes"""
 
     def __init__(self, index_file, vacuum_thres = 0.1, backfill=False):
         """
@@ -61,6 +65,18 @@ class TlvStorage(object):
 
             self.clean = True
 
+        self.data_indexes = {}
+        """
+        A hash holding index per attribute The strcutre should be:
+        name: {
+            used: epoch,
+            index: object
+        }
+
+        The oldest used index will be automatically dropped when a new index
+        needs to be loaded
+        """
+
     def _getDataFileEnd(self, part):
         """
         Caller is responsible of locking
@@ -77,6 +93,36 @@ class TlvStorage(object):
     def _findAGoodPossiotion(self, part, size):
         return self._getDataFileEnd(part)
 
+    def _handleIndexing(self, operation, tlvid, packable=None, pos=None):
+        """
+        Update this TlvStorage b+ indexes
+        """
+        # Go for the index we know of (like in a delete operation!)
+        if packable is None:
+            for attr, di in self.data_indexes.items():
+                with di["index"].lock:
+                    di["index"].handle(operation, tlvid)
+
+                # Flush if needed
+                if self.in_trance is False:
+                    di["index"].flush()
+
+            return
+
+        # Adding or updating... we have a lot more info about the transaction
+        for attr in packable.indexed:
+            if attr not in self.data_indexes.keys():
+                indexpath = "%s/%s.%s.dat" % (self.dirname, self.basename, attr)
+                self.data_indexes[attr] = {
+                    "used": time.time(),
+                    "index": BPlusTreeIndex(indexpath)
+                }
+
+            with self.data_indexes[attr]["index"].lock:
+                self.data_indexes[attr]["index"].handle(operation, tlvid, getattr(packable, attr), pos)
+                if self.in_trance is False:
+                    self.data_indexes[attr]["index"].flush()
+
 
     def beginTransaction(self):
         self.in_trance = True
@@ -85,9 +131,22 @@ class TlvStorage(object):
         self.in_trance = False
         self.index.flush()
 
+        # Lock and flush all data fds (simple flush - no writing)
         for p in self.dfds:
             with p["lock"]:
                 p["fd"].flush()
+
+        # For all data indexes
+        for attr, di in self.data_indexes.items():
+            with di["index"].lock:
+                
+                # Skip already clean ones
+                if di["index"].clean:
+                    continue
+
+                # This is a complete index re-write - call wisely
+                di["index"].flush()
+
 
     def create(self, packable):
         """
@@ -121,6 +180,8 @@ class TlvStorage(object):
                 self.index.flush()
                 with self.dfds[part]["lock"]:
                     self.dfds[part]["fd"].flush()
+
+            self._handleIndexing("create", nextid, packable, pos)
 
             lg.info("create: Releasing")
             return nextid
@@ -165,8 +226,10 @@ class TlvStorage(object):
                 self.dfds[part]["fd"].seek(oldpos)
                 ret = instance.unpack(self.dfds[part]["fd"])
 
+
         # Handle index
         self._handleEmptying(part, oldpos)
+        self._handleIndexing("delete", tid)
 
         # In any case, flush index
         if self.in_trance is False:

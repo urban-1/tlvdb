@@ -45,14 +45,15 @@ class IPackable(object):
 
     @classmethod
     def valueToTLV(self, value):
+        t = type(value)
         if isinstance(value, IPackable):
             return value.toTLV()
-        elif type(value) == list:
+        elif t == list or t == tuple:
             t = []
             for i in value:
                 t.append(IPackable.valueToTLV(i))
             return TLV(t)
-        elif type(value) == dict:
+        elif t == dict:
             d = {}
             for k, v in value.items():
                 t[IPackable.valueToTLV(k)] = t[IPackable.valueToTLV(v)]
@@ -84,8 +85,12 @@ class IPackable(object):
         """
         t = TLV()
         t.unpack(fd)
+        # See if we read anything...
+        if t._tlvdb_size is None:
+            return self
+
         decoded = t.getDecodedValue()
-        print(decoded)
+        
         for attr in self.__class__.packaged:
             # Convert to bytes if needed
             attr_bytes = attr
@@ -111,6 +116,19 @@ class IPackable(object):
 
         return s
 
+
+class GenericPackable(IPackable):
+    """
+    A helper class to pack all buildin types... use the internal data variable
+    to set data
+    """
+
+    packaged = ["data"]
+    """Packaged attributes"""
+
+    def __init__(self, d=[]):
+        self.data = d
+
 class TLV(BaseIO, IPackable):
 
     def __init__(self, value=None, fd=None):
@@ -126,12 +144,13 @@ class TLV(BaseIO, IPackable):
 
     def getDecodedValue(self):
         """Get the TLV value decoded to python objects"""
-        if type(self.value) == dict:
+        t = type(self.value)
+        if t == dict:
             r = {}
             for k, v in self.value.items():
                 r[k.getDecodedValue()] = v.getDecodedValue()
             return r
-        elif type(self.value) == list:
+        elif t == list or t == tuple:
             # list of TLVs
             r = []
             for i in self.value:
@@ -160,7 +179,7 @@ class TLV(BaseIO, IPackable):
 
         t = type(self.value)
 
-        if t == list or t == set:
+        if t == list or t == set or t == tuple:
             self.length = len(self.value)
             self.type = b"T"
         elif t == dict:
@@ -282,6 +301,9 @@ class TLV(BaseIO, IPackable):
         lg.debug("Reading from %d" % pos)
 
         data = self.fd.read(1)
+        if data is None or len(data) == 0:
+            return None
+
         self.type = struct.unpack("<c", data)[0]
         data_len = 1
 

@@ -225,8 +225,8 @@ class _BPlusLeaf(_BNode):
         # if any leaf that could accept the key can do so
         # without any rebalancing necessary, then go that route
         current = self
-        while current is not None and current.contents[0] == key:
-            if len(current.contents) > minimum:
+        while current is not None and current.contents[index] == key:
+            if len(current.contents) > minimum or len(ancestors) == 0:
                 if current.contents[0] == key:
                     index = 0
                 else:
@@ -499,6 +499,9 @@ class BPlusTree(BTree):
         node.insert(index, key, data, path)
 
     def remove(self, key):
+        """
+        Get path to node, pop to get rid if the Leaf node and remove...
+        """
         path = self._path_to(key)
         node, index = path.pop()
         node.remove(index, path)
@@ -574,6 +577,19 @@ class BPlusTree(BTree):
             if regex.search(k):
                 yield v
 
+    def removeByValue(self, value, multiple=False):
+        """
+        Remove while we dont know the key and thus we cannot have a path...
+        """
+        deleted = 0
+        for k, v in self.iteritems():
+            if v == value:
+                self.remove(k)
+                deleted += 1
+                if multiple is False:
+                    break
+
+        return deleted
 
 
 class BTreeTests(unittest.TestCase):
@@ -750,6 +766,16 @@ class BPlusTreeTests(unittest.TestCase):
 
         e = time.time()
         print("Get Float: %.2f" % ((e-s)*1000))
+
+    def test_delete(self):
+        """
+        This breaks remove function...
+        """
+        bt = BPlusTree(20)
+        bt.insert(1000, "Test")
+        bt.remove(1000)
+
+
 
 
 

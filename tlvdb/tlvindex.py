@@ -10,36 +10,6 @@ class IndexEntry(BaseIO):
     """
     LENGTH = 17
 
-    def __init__(self, partition=None, key=None, offset=None, fd=None):
-        super(BaseIO, self).__init__(fd)
-        self.partition = partition
-        self.key = key
-        self.offset = offset
-
-    def size(self):
-        return IndexEntry.LENGTH
-
-    def read(self, pos, seek=True):
-        if seek:
-            self.seek(pos)
-
-        data = self.fd.read(IndexEntry.LENGTH)
-
-        self.partition,
-        self.key,
-        self.offset = struct.unpack("<BQQ", data)
-
-    def write(self, pos, seek=True):
-        if seek:
-            self.seek(pos)
-
-        data = struct.pack("<BQQ",
-            self.partition,
-            self.key,
-            self.offset
-        )
-        self.fd.write(data)
-
 
 
 class IndexHeader(BaseIO):
@@ -133,12 +103,6 @@ class Index(object):
         pass
 
     def delete(self, tlvid):
-        pass
-
-    def getFreePosition(self, partition, size):
-        """
-        Find the next available position that can fit ``size``
-        """
         pass
 
     def flush(self):
